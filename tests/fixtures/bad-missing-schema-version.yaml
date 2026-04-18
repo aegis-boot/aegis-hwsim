@@ -1,0 +1,17 @@
+# Missing schema_version — serde should flag the required field.
+id: bad-missing-schema-version
+vendor: QEMU
+display_name: "Deliberately broken — no schema_version"
+source:
+  kind: vendor_docs
+  ref_: "negative test fixture"
+dmi:
+  sys_vendor: QEMU
+  product_name: "Standard PC"
+  bios_vendor: EDK II
+  bios_version: "edk2-stable"
+  bios_date: 01/01/2024
+secure_boot:
+  ovmf_variant: ms_enrolled
+tpm:
+  version: "2.0"

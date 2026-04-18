@@ -1,0 +1,20 @@
+schema_version: 1
+id: bad-custom-keyring-traversal
+vendor: QEMU
+display_name: "custom_keyring escapes firmware root"
+source:
+  kind: vendor_docs
+  ref_: "negative test fixture"
+dmi:
+  sys_vendor: QEMU
+  product_name: "Standard PC"
+  bios_vendor: EDK II
+  bios_version: "edk2-stable"
+  bios_date: 01/01/2024
+secure_boot:
+  ovmf_variant: custom_pk
+  # Absolute path well outside any reasonable firmware root — the
+  # CustomKeyringOutsideRoot guard fires.
+  custom_keyring: /etc/passwd
+tpm:
+  version: "2.0"
