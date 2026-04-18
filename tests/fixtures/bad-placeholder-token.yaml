@@ -1,0 +1,19 @@
+schema_version: 1
+id: bad-placeholder-token
+vendor: QEMU
+# This display_name contains the placeholder marker that production
+# personas MUST NOT carry — the loader's Placeholder guard fires.
+display_name: "TEST_ONLY_NOT_FOR_PRODUCTION test fixture"
+source:
+  kind: vendor_docs
+  ref_: "negative test fixture"
+dmi:
+  sys_vendor: QEMU
+  product_name: "Standard PC"
+  bios_vendor: EDK II
+  bios_version: "edk2-stable"
+  bios_date: 01/01/2024
+secure_boot:
+  ovmf_variant: ms_enrolled
+tpm:
+  version: "2.0"

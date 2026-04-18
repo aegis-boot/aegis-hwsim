@@ -3,6 +3,8 @@
 //! placeholder token, a quirk-tag syntax violation, or drifts between
 //! filename and `id`, this test fails before CI does.
 
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use aegis_hwsim::loader::{load_all, LoadOptions};
 use std::path::PathBuf;
 
