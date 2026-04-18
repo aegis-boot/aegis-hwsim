@@ -1,0 +1,31 @@
+schema_version: 1
+id: qemu-generic-minimal
+vendor: QEMU
+display_name: "QEMU generic (OVMF + swtpm reference)"
+year: 2024
+source:
+  # QEMU's own documentation describes these DMI defaults. Lowest-confidence
+  # citation type is fine here — this is the emulated reference, not a
+  # shipping laptop.
+  kind: vendor_docs
+  ref_: "https://www.qemu.org/docs/master/system/invocation.html#hxtool-3"
+
+dmi:
+  sys_vendor: QEMU
+  product_name: "Standard PC (Q35 + ICH9, 2009)"
+  bios_vendor: EDK II
+  bios_version: "edk2-stable202402"
+  bios_date: 02/29/2024
+  chassis_type: 1   # SMBIOS "Other" — QEMU's default
+
+secure_boot:
+  ovmf_variant: ms_enrolled
+
+tpm:
+  version: "2.0"
+
+kernel:
+  lockdown: inherit
+
+# No quirks — by construction. This persona IS the reference environment;
+# anything it can't simulate is a harness limitation, not a persona quirk.

@@ -1,0 +1,10 @@
+/target
+Cargo.lock.bak
+*.swp
+*.orig
+# Local test artifacts
+/work
+/out
+*.qcow2
+*.fd.local
+swtpm-state/

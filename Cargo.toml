@@ -1,0 +1,33 @@
+[package]
+name = "aegis-hwsim"
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+description = "QEMU+OVMF+swtpm hardware-persona matrix harness for aegis-boot signed-chain testing"
+repository = "https://github.com/williamzujkowski/aegis-hwsim"
+homepage = "https://github.com/williamzujkowski/aegis-hwsim"
+readme = "README.md"
+keywords = ["qemu", "ovmf", "uefi", "testing", "secure-boot"]
+categories = ["development-tools::testing", "emulators"]
+
+[[bin]]
+name = "aegis-hwsim"
+path = "src/bin/aegis-hwsim.rs"
+
+[dependencies]
+# Minimal stack to start. We'll add as scenarios need them. No clap —
+# aegis-boot chose hand-rolled argv; stay consistent across the family.
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+thiserror = "2"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"

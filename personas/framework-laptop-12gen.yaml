@@ -1,0 +1,42 @@
+schema_version: 1
+id: framework-laptop-12gen
+vendor: Framework
+display_name: "Framework Laptop (12th Gen Intel Core)"
+year: 2022
+
+source:
+  # Derived from DMI readout on a real unit running aegis-boot#195 (doctor
+  # compat-DB cross-check) during the 2026-04-17 dogfood session. Upgrade
+  # to community_report with an issue link once the full chain is verified.
+  kind: community_report
+  ref_: "https://github.com/williamzujkowski/aegis-boot/issues/195 (interactive dogfood session, 2026-04-17)"
+  captured_at: 2026-04-17
+
+dmi:
+  # Verbatim from /sys/class/dmi/id/* on a real Framework 12th Gen unit.
+  sys_vendor: Framework
+  product_name: "Laptop (12th Gen Intel Core)"
+  product_version: A6
+  bios_vendor: "INSYDE Corp."
+  bios_version: "03.19"
+  bios_date: 09/18/2025
+  chassis_type: 10   # Notebook
+
+secure_boot:
+  ovmf_variant: ms_enrolled
+
+tpm:
+  version: "2.0"
+  # Framework 12th Gen ships Intel fTPM (CPU-integrated, not discrete).
+  # QEMU's swtpm-tpm-tis emulation is functionally equivalent for
+  # userspace PCR read/extend; firmware-bug paths are not reproducible.
+  manufacturer: INTC
+
+kernel:
+  lockdown: inherit
+
+quirks:
+  - tag: insyde-firmware
+    description: "Uses INSYDE Corp. firmware rather than AMI/Phoenix. Operator-facing differences: BIOS menu layout, update mechanism (fwupdmgr rather than vendor tool)."
+  - tag: fast-boot-off-default
+    description: "Ships with Fast Boot disabled by default (as of 03.19). Unlike ThinkPad X1 Gen 11, no operator intervention needed for USB boot."

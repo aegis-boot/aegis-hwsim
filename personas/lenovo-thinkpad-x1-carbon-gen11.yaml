@@ -1,0 +1,46 @@
+schema_version: 1
+id: lenovo-thinkpad-x1-carbon-gen11
+vendor: LENOVO
+display_name: "Lenovo ThinkPad X1 Carbon Gen 11"
+year: 2023
+
+source:
+  # Placeholder citation until a real community report lands. Do NOT ship
+  # this persona to main until a real operator has run the full flash →
+  # boot → kexec chain on a physical X1 Gen 11 and filed a hardware-report
+  # on aegis-boot. See aegis-boot CLAUDE.md and HARDWARE_COMPAT.md's
+  # "verified outcomes only" policy.
+  kind: vendor_docs
+  ref_: "Lenovo PSREF ThinkPad X1 Carbon Gen 11 (placeholder — replace with community_report URL before merging to main)"
+
+dmi:
+  # sys_vendor observed on shipping X1 Carbons
+  sys_vendor: LENOVO
+  # Lenovo convention: SKU code in product_name, friendly name in product_version.
+  # aegis-boot's doctor handles this — prefers product_version when it's the
+  # longer non-placeholder value.
+  product_name: 21HMCTO1WW
+  product_version: "ThinkPad X1 Carbon Gen 11"
+  bios_vendor: LENOVO
+  bios_version: "N3HET70W (1.50)"
+  bios_date: 01/15/2024
+  board_name: 21HMCTO1WW
+  chassis_type: 10   # SMBIOS "Notebook"
+
+secure_boot:
+  ovmf_variant: ms_enrolled
+
+tpm:
+  version: "2.0"
+  manufacturer: IFX    # Infineon
+
+kernel:
+  lockdown: inherit
+
+quirks:
+  - tag: fast-boot-default-on
+    description: "Ships with Fast Boot enabled in BIOS. Must be disabled for USB enumeration to be reliable under `aegis-boot flash`. Not reproducible in QEMU."
+  - tag: boot-key-f12
+    description: "Firmware boot-menu key is F12 (not the vendor default F1/F2). Surfaces in rescue-tui's MOK walkthrough STEP 3/3 per aegis-boot#202."
+  - tag: mok-manager-blue-background
+    description: "MOK Manager renders blue-on-black, matching the text in rescue-tui's MOK walkthrough. No QEMU fidelity."
