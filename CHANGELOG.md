@@ -4,7 +4,9 @@ All notable changes to aegis-hwsim. Mirrors the [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
-_Nothing yet. Work since 0.0.2 lands here._
+### CI
+
+- **Bump Node-20-based GitHub Actions to Node-24-compatible v5** (closes [#59](https://github.com/williamzujkowski/aegis-hwsim/issues/59)) — `actions/checkout@v4 → @v5` and `actions/upload-artifact@v4 → @v5` in `.github/workflows/ci.yml`. Closes the deprecation banner runners surface ("Node.js 20 actions are deprecated… Node.js 20 will be removed from the runner on September 16th, 2026"). Single-line changes; v5 is backward-compatible with the explicit `retention-days: 30` and `if-no-files-found: error` settings we use.
 
 ## [0.0.2] — 2026-04-18
 
