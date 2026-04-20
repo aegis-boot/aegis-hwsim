@@ -110,10 +110,15 @@ The parent session that spun up this repo has memory notes at `/home/william/.cl
 
 ## Status
 
-**Scaffolding phase.** Subcommands currently exit 3 with "not implemented". Phase 1 target per [aegis-boot#226](https://github.com/williamzujkowski/aegis-boot/issues/226):
+**Phase 1 + Phase 2 complete** (v0.0.2, 2026-04-18 per `CHANGELOG.md`). All subcommands (`doctor`, `list-personas`, `list-scenarios`, `gen-schema`, `coverage-grid`, `run`, `--version`) implemented and exercised on CI. 11 personas covering all 4 OVMF variants and all 3 TPM versions; 2 scenarios (`qemu-boots-ovmf` smoke + `signed-boot-ubuntu` end-to-end); 113 tests including 60k random-input fuzz per CI run.
 
-- [x] Persona schema + 3 starter fixtures
-- [x] Research index + prior-art survey
-- [ ] Runner: persona loader + `aegis-hwsim validate`
-- [ ] Runner: QEMU synthesis for `signed-boot-ubuntu` scenario
-- [ ] CI matrix job producing coverage grid artifact
+Tracking issues for next phases:
+
+- [#5](https://github.com/williamzujkowski/aegis-hwsim/issues/5) — E5: MOK + unsigned-kexec scenarios (phase-2)
+- [#6](https://github.com/williamzujkowski/aegis-hwsim/issues/6) — E6: attestation + TPM-varied personas (phase-2)
+- [#7](https://github.com/williamzujkowski/aegis-hwsim/issues/7) — E7: v1.0 release gate (phase-3)
+
+Feature proposals currently blocked on upstream signal (do not pre-build):
+
+- [#50](https://github.com/williamzujkowski/aegis-hwsim/issues/50) — signed-boot-uki scenario (blocked on UKI-formatted aegis-boot stick artifact)
+- [#51](https://github.com/williamzujkowski/aegis-hwsim/issues/51) — sbat_generation persona axis (blocked on first real-world hardware-report flagging SBAT failure)

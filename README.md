@@ -6,7 +6,7 @@
 
 <!-- crates.io + docs.rs badges pending first `cargo publish` (tracked: E7 #7) -->
 
-**Status:** Phase 1 working. CI exercises the full QEMU+OVMF+swtpm pipeline against the persona library on every PR via the `qemu-boots-ovmf` smoke scenario. Tracks [aegis-boot#226](https://github.com/williamzujkowski/aegis-boot/issues/226).
+**Status:** Phase 1 + Phase 2 complete (v0.0.2, 2026-04-18) — 11 personas covering all 4 OVMF variants and all 3 TPM versions, 2 scenarios (`qemu-boots-ovmf` smoke + `signed-boot-ubuntu` end-to-end), coverage-grid artifact per PR, 113 tests including 60k-input fuzz per CI run. Tracks [aegis-boot#226](https://github.com/williamzujkowski/aegis-boot/issues/226); next phases tracked in [#5](https://github.com/williamzujkowski/aegis-hwsim/issues/5) / [#6](https://github.com/williamzujkowski/aegis-hwsim/issues/6) / [#7](https://github.com/williamzujkowski/aegis-hwsim/issues/7).
 
 A test harness that parameterizes **QEMU + OVMF + swtpm** over a matrix of **hardware personas** — YAML fixtures matching real shipping laptops/workstations — so [aegis-boot](https://github.com/williamzujkowski/aegis-boot)'s UEFI-Secure-Boot-preserving USB-rescue-stick flow can be validated across ~100 configurations without waiting on physical Framework / ThinkPad / Dell / HP / ASUS hardware.
 
