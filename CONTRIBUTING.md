@@ -30,7 +30,7 @@ Then read [docs/architecture.md](docs/architecture.md) before opening a non-triv
 | New test for an existing module | Yes | Especially edge cases the fuzz didn't catch. |
 | Refactor that improves clarity | Yes | Must keep all existing tests green + add a test if it caught a real defect. |
 | Refactor "for cleanness" with no test improvement | No | We avoid churn. See aegis-boot CLAUDE.md "refactor threshold" §. |
-| New dependency | Discuss first | Open an issue. The crate currently uses serde, serde_json, serde_yaml, schemars, thiserror, and tempfile (dev). Each addition is justified. |
+| New dependency | Discuss first | Open an issue. The crate currently uses serde, serde_json, serde_yaml_ng, schemars, thiserror, and tempfile (dev). Each addition is justified. |
 | New CLI subcommand | Yes if scoped | Must have a `--help` line + `print_help` entry. |
 
 ## Source-citation policy
