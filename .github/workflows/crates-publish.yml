@@ -37,6 +37,10 @@ jobs:
     # reviewer rule — autonomous bug-fix releases per the
     # aegis-boot/aegis-boot precedent (2026-04-22).
     environment: release
+    # Cap the whole job at 15 min. Cold OIDC + toolchain install + a
+    # crates.io publish typically takes <3 min; a 5x headroom catches
+    # crates.io stalls without sitting in the queue.
+    timeout-minutes: 15
     permissions:
       id-token: write
       contents: read
@@ -55,6 +59,11 @@ jobs:
         id: cio_auth
 
       - name: publish aegis-hwsim
+        # The publish step is the one that talks to crates.io. If the
+        # registry stalls, the whole step blocks. 10-min step cap is
+        # the explicit "give up" boundary — well above the ~30s a
+        # healthy publish takes.
+        timeout-minutes: 10
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.cio_auth.outputs.token }}
         run: ./scripts/publish-if-new.sh aegis-hwsim

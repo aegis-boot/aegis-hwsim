@@ -2,9 +2,30 @@ name: CI
 on: [push, pull_request]
 permissions:
   contents: read
+
+# Cancel superseded runs on the same ref. CLAUDE.md "Security
+# constraints #3" calls for CI concurrency limits; this prevents
+# overlapping runs from doubling up on swtpm/QEMU resource use when
+# branches are pushed in rapid succession. The `cancel-in-progress`
+# flag is safe here — tests are deterministic and a fresh run from
+# the latest commit is always preferred over an in-flight stale run.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    # Belt + braces: any individual scenario already enforces its own
+    # in-process timeout (5 min default per CLAUDE.md), but a runaway
+    # cargo command (e.g. dependency resolution stalled on a bad
+    # mirror) would still hold the runner for GitHub's 360-min default.
+    # 30 min is well above the typical ~5 min run with headroom for
+    # cold caches.
+    timeout-minutes: 30
+    # If we ever fan this out into a matrix (E5 OS coverage, E6 TPM
+    # variants), the CLAUDE.md non-negotiable max-parallel: 4 lives
+    # here — `strategy: { matrix: ..., max-parallel: 4 }`.
     steps:
       - uses: actions/checkout@v5
       - name: Install Rust
@@ -54,3 +75,16 @@ jobs:
           path: artifacts/coverage-grid.*
           retention-days: 30
           if-no-files-found: error
+
+      - name: Cleanup stray test processes + work dirs
+        # CLAUDE.md "Security constraints #3" mandates swtpm cleanup
+        # in trap handlers. Drop impls in src/swtpm.rs and src/serial.rs
+        # SIGKILL their children when the harness exits cleanly, but
+        # if a scenario panics the runner can leak. Belt-and-suspenders
+        # cleanup keeps the runner clean for any subsequent step and
+        # avoids leaving sockets in /tmp on shared GitHub runners.
+        if: always()
+        run: |
+          pkill -x swtpm 2>/dev/null || true
+          pkill -x qemu-system-x86_64 2>/dev/null || true
+          rm -rf /tmp/aegis-hwsim-* 2>/dev/null || true
