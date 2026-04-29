@@ -206,11 +206,14 @@ fn print_list_json(personas: &[Persona]) {
     for (i, p) in personas.iter().enumerate() {
         let comma = if i == last { "" } else { "," };
         println!("    {{");
-        println!("      \"id\": \"{}\",", json_escape(&p.id));
-        println!("      \"vendor\": \"{}\",", json_escape(&p.vendor));
+        println!("      \"id\": \"{}\",", aegis_hwsim::json::escape(&p.id));
+        println!(
+            "      \"vendor\": \"{}\",",
+            aegis_hwsim::json::escape(&p.vendor)
+        );
         println!(
             "      \"display_name\": \"{}\",",
-            json_escape(&p.display_name)
+            aegis_hwsim::json::escape(&p.display_name)
         );
         println!(
             "      \"source_kind\": \"{}\",",
@@ -263,29 +266,6 @@ fn truncate(s: &str, max: usize) -> String {
     }
     let mut out: String = s.chars().take(max.saturating_sub(1)).collect();
     out.push('\u{2026}');
-    out
-}
-
-/// Minimal JSON string escaper — covers `"`, `\`, control chars, newline,
-/// tab. Not a general-purpose JSON library; we keep the output format
-/// deterministic + dependency-light (matches aegis-boot's
-/// `doctor::json_escape` shape so the family parses uniformly).
-fn json_escape(s: &str) -> String {
-    use std::fmt::Write as _;
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => {
-                let _ = write!(out, "\\u{:04x}", c as u32);
-            }
-            c => out.push(c),
-        }
-    }
     out
 }
 
@@ -478,8 +458,11 @@ fn print_scenarios_json(registry: &aegis_hwsim::scenario::Registry) {
     for (i, (name, desc)) in entries.iter().enumerate() {
         let comma = if i == last { "" } else { "," };
         println!("    {{");
-        println!("      \"name\": \"{}\",", json_escape(name));
-        println!("      \"description\": \"{}\"", json_escape(desc));
+        println!("      \"name\": \"{}\",", aegis_hwsim::json::escape(name));
+        println!(
+            "      \"description\": \"{}\"",
+            aegis_hwsim::json::escape(desc)
+        );
         println!("    }}{comma}");
     }
     println!("  ]");

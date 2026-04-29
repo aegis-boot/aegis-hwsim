@@ -22,6 +22,7 @@
 
 use crate::persona::Persona;
 use crate::scenario::{Registry, Scenario, ScenarioContext, ScenarioError, ScenarioResult};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -199,18 +200,18 @@ fn render_json(cells: &[GridCell]) -> String {
         let _ = writeln!(
             out,
             "      \"persona_id\": \"{}\",",
-            json_escape(&c.persona_id)
+            crate::json::escape(&c.persona_id)
         );
         let _ = writeln!(
             out,
             "      \"scenario_name\": \"{}\",",
-            json_escape(c.scenario_name)
+            crate::json::escape(c.scenario_name)
         );
         let _ = writeln!(out, "      \"result\": \"{}\",", c.outcome.label());
         let _ = writeln!(
             out,
             "      \"reason\": \"{}\",",
-            json_escape(c.outcome.reason())
+            crate::json::escape(c.outcome.reason())
         );
         let _ = writeln!(out, "      \"duration_ms\": {}", c.duration.as_millis());
         let _ = writeln!(out, "    }}{comma}");
@@ -226,6 +227,17 @@ fn render_markdown(cells: &[GridCell], registry: &Registry) -> String {
     let mut personas: Vec<String> = cells.iter().map(|c| c.persona_id.clone()).collect();
     personas.sort();
     personas.dedup();
+
+    // Build a (persona, scenario) → label index once. The previous
+    // version did `cells.iter().find(...)` per cell-render iteration —
+    // O(personas × scenarios × cells) ≈ O(N²·M²) for N personas and
+    // M scenarios. With 11 personas × 4 scenarios that's 1936 ops on
+    // the current grid; harmless today but the math gets cubic-ish
+    // as the grid grows. HashMap lookup keeps the render in O(N·M).
+    let mut index: HashMap<(&str, &str), &'static str> = HashMap::with_capacity(cells.len());
+    for c in cells {
+        index.insert((&c.persona_id, c.scenario_name), c.outcome.label());
+    }
 
     let mut out = String::with_capacity(cells.len() * 80);
     out.push_str("# aegis-hwsim coverage grid\n\n");
@@ -252,10 +264,7 @@ fn render_markdown(cells: &[GridCell], registry: &Registry) -> String {
     for p in &personas {
         let _ = write!(out, "| {p} |");
         for s in &scenarios {
-            let cell = cells
-                .iter()
-                .find(|c| c.persona_id == *p && c.scenario_name == *s);
-            let label = cell.map_or("?", |c| c.outcome.label());
+            let label = index.get(&(p.as_str(), *s)).copied().unwrap_or("?");
             let _ = write!(out, " {label} |");
         }
         out.push('\n');
@@ -277,28 +286,6 @@ fn render_markdown(cells: &[GridCell], registry: &Registry) -> String {
             c.outcome.label(),
             r
         );
-    }
-    out
-}
-
-/// Minimal JSON string escape — covers `"`, `\`, control chars, newline,
-/// tab. Matches the existing pattern in `aegis-hwsim list-personas
-/// --json` so the family parses uniformly.
-fn json_escape(s: &str) -> String {
-    use std::fmt::Write as _;
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => {
-                let _ = write!(out, "\\u{:04x}", c as u32);
-            }
-            c => out.push(c),
-        }
     }
     out
 }
