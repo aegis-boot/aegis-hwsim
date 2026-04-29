@@ -1,0 +1,86 @@
+name: CodeQL
+# Static-analysis scanning via GitHub CodeQL. Rust support graduated to
+# generally-available in mid-2025; we run it here so the harness gets
+# the same security-finding surface as the rest of the aegis-boot
+# family. Findings appear in the repo's Security tab.
+#
+# Triggers:
+#   - push to main (so post-merge wins/regressions show up)
+#   - pull_request targeting main (so PRs preview their findings)
+#   - weekly schedule (so a new CodeQL query release lights up
+#     pre-existing-but-undetected issues without waiting for a push)
+#
+# Per CLAUDE.md "Security constraints", this complements but doesn't
+# replace:
+#   - cargo clippy + cargo fmt (style + obvious correctness)
+#   - tests/fuzz_invocation.rs (40k adversarial argv inputs/run)
+#   - scripts/audit-no-test-keys.sh (release-gate marker sweep)
+# CodeQL adds taint-flow analysis: tracks data from sources (env,
+# argv, file I/O) to sinks (Command::new, fs ops) and flags any
+# unvalidated reach.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Mondays 06:13 UTC — off-peak, avoids contention with other
+    # repo's nightly runs. The minute is jittered (not :00) so
+    # GitHub doesn't pile a thundering-herd on the hour boundary.
+    - cron: '13 6 * * 1'
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: CodeQL — Rust
+    runs-on: ubuntu-latest
+    # CodeQL on a small Rust crate is typically <5 min; 30 min cap
+    # gives headroom for cold-cache toolchain installs and a future
+    # matrix expansion (e.g. add C/C++ when we ship vendored OVMF).
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [rust]
+      # If the matrix grows (rust + python for scripts/, etc.), the
+      # CLAUDE.md non-negotiable max-parallel: 4 lives here.
+      # max-parallel: 4
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Rust toolchain (pinned to MSRV)
+        # CodeQL needs cargo+rustc available to autobuild. Pin to the
+        # same MSRV as ci.yml so analysis runs against the version
+        # the project actually ships against.
+        run: |
+          rustup toolchain install 1.85.0 --profile minimal
+          rustup default 1.85.0
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # security-extended is the full CodeQL query suite; the
+          # default 'security-and-quality' adds maintainability lints
+          # which mostly duplicate clippy. We want the security delta.
+          queries: security-extended
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: '/language:${{ matrix.language }}'
