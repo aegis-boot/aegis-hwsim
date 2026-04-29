@@ -81,7 +81,7 @@ impl Invocation {
         }
         let stick_canon = fs::canonicalize(stick).map_err(|e| InvocationError::StickNotFound {
             path: stick.to_path_buf(),
-            kind: format!("{:?}", e.kind()),
+            kind: e.to_string(),
         })?;
 
         // Resolve `OVMF_CODE` + VARS template (the CustomPk keyring check
@@ -101,19 +101,19 @@ impl Invocation {
         // and re-check `starts_with`.
         fs::create_dir_all(work_dir).map_err(|e| InvocationError::WorkDirInaccessible {
             path: work_dir.to_path_buf(),
-            kind: format!("{:?}", e.kind()),
+            kind: e.to_string(),
         })?;
         let work_root_canon =
             fs::canonicalize(work_dir).map_err(|e| InvocationError::WorkDirInaccessible {
                 path: work_dir.to_path_buf(),
-                kind: format!("{:?}", e.kind()),
+                kind: e.to_string(),
             })?;
         let vars_copy = work_root_canon.join("OVMF_VARS.fd");
         fs::copy(&paths.vars_template, &vars_copy).map_err(|e| {
             InvocationError::VarsCopyFailed {
                 from: paths.vars_template.clone(),
                 to: vars_copy.clone(),
-                kind: format!("{:?}", e.kind()),
+                kind: e.to_string(),
             }
         })?;
 
@@ -126,7 +126,7 @@ impl Invocation {
             fs::canonicalize(&vars_copy).map_err(|e| InvocationError::VarsCopyFailed {
                 from: paths.vars_template.clone(),
                 to: vars_copy.clone(),
-                kind: format!("{:?}", e.kind()),
+                kind: e.to_string(),
             })?;
         if !vars_copy_canon.starts_with(&work_root_canon) {
             return Err(InvocationError::VarsCopyEscapedRoot {
@@ -263,7 +263,10 @@ pub enum InvocationError {
     StickNotFound {
         /// The path the operator passed.
         path: PathBuf,
-        /// Rendered `io::ErrorKind`.
+        /// Underlying `io::Error` message — Display form so OS-level
+        /// detail (e.g. "No such file or directory (os error 2)")
+        /// surfaces to the operator instead of the bare `ErrorKind`
+        /// name.
         kind: String,
     },
 
@@ -281,7 +284,10 @@ pub enum InvocationError {
     WorkDirInaccessible {
         /// The path that couldn't be created.
         path: PathBuf,
-        /// Rendered `io::ErrorKind`.
+        /// Underlying `io::Error` message — Display form so OS-level
+        /// detail (e.g. "No such file or directory (os error 2)")
+        /// surfaces to the operator instead of the bare `ErrorKind`
+        /// name.
         kind: String,
     },
 
@@ -292,7 +298,10 @@ pub enum InvocationError {
         from: PathBuf,
         /// Destination per-run copy.
         to: PathBuf,
-        /// Rendered `io::ErrorKind`.
+        /// Underlying `io::Error` message — Display form so OS-level
+        /// detail (e.g. "No such file or directory (os error 2)")
+        /// surfaces to the operator instead of the bare `ErrorKind`
+        /// name.
         kind: String,
     },
 

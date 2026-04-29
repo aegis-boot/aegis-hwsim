@@ -109,7 +109,7 @@ impl SwtpmInstance {
         }
         fs::create_dir_all(&spec.state_dir).map_err(|e| SwtpmError::WorkDirInaccessible {
             path: spec.state_dir.clone(),
-            kind: format!("{:?}", e.kind()),
+            kind: e.to_string(),
         })?;
 
         let mut cmd = Command::new(binary);
@@ -134,7 +134,7 @@ impl SwtpmInstance {
 
         let child = cmd.spawn().map_err(|e| SwtpmError::SpawnFailed {
             binary: binary.to_string(),
-            kind: format!("{:?}", e.kind()),
+            kind: e.to_string(),
         })?;
 
         Ok(Self::Live {
@@ -191,7 +191,10 @@ pub enum SwtpmError {
     WorkDirInaccessible {
         /// The state dir path we tried to create.
         path: PathBuf,
-        /// Rendered `io::ErrorKind`.
+        /// Underlying `io::Error` message — Display form so OS-level
+        /// detail (e.g. "No such file or directory (os error 2)")
+        /// surfaces to the operator instead of the bare `ErrorKind`
+        /// name.
         kind: String,
     },
 
@@ -201,7 +204,10 @@ pub enum SwtpmError {
     SpawnFailed {
         /// Binary name that failed.
         binary: String,
-        /// Rendered `io::ErrorKind`.
+        /// Underlying `io::Error` message — Display form so OS-level
+        /// detail (e.g. "No such file or directory (os error 2)")
+        /// surfaces to the operator instead of the bare `ErrorKind`
+        /// name.
         kind: String,
     },
 }

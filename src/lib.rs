@@ -10,6 +10,7 @@
 
 pub mod coverage_grid;
 pub mod doctor;
+pub mod json;
 pub mod loader;
 pub mod ovmf;
 pub mod persona;

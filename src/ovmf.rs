@@ -220,7 +220,7 @@ fn verify_keyring_under_root(keyring: &Path, firmware_root: &Path) -> Result<Pat
 fn canonicalize_or_err(path: &Path) -> Result<PathBuf, OvmfError> {
     std::fs::canonicalize(path).map_err(|e| OvmfError::Canonicalize {
         path: path.to_path_buf(),
-        kind: format!("{:?}", e.kind()),
+        kind: e.to_string(),
     })
 }
 

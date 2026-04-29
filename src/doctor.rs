@@ -132,7 +132,7 @@ impl Report {
         let _ = writeln!(
             out,
             "  \"next_action\": \"{}\",",
-            json_escape(&self.next_action())
+            crate::json::escape(&self.next_action())
         );
         let _ = writeln!(out, "  \"has_failures\": {},", self.has_failures());
         let _ = writeln!(out, "  \"has_warnings\": {},", self.has_warnings());
@@ -142,37 +142,22 @@ impl Report {
             let comma = if i == last { "" } else { "," };
             out.push_str("    {\n");
             let _ = writeln!(out, "      \"verdict\": \"{}\",", c.verdict.label());
-            let _ = writeln!(out, "      \"subject\": \"{}\",", json_escape(&c.subject));
-            let _ = writeln!(out, "      \"message\": \"{}\"", json_escape(&c.message));
+            let _ = writeln!(
+                out,
+                "      \"subject\": \"{}\",",
+                crate::json::escape(&c.subject)
+            );
+            let _ = writeln!(
+                out,
+                "      \"message\": \"{}\"",
+                crate::json::escape(&c.message)
+            );
             let _ = writeln!(out, "    }}{comma}");
         }
         out.push_str("  ]\n");
         out.push_str("}\n");
         out
     }
-}
-
-/// Minimal JSON string escape — matches the helper in
-/// `bin/aegis-hwsim.rs` + `coverage_grid.rs`. Duplicated here only
-/// because doctor doesn't depend on either; would extract to a shared
-/// `json` module if a fourth caller appeared.
-fn json_escape(s: &str) -> String {
-    use std::fmt::Write as _;
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => {
-                let _ = write!(out, "\\u{:04x}", c as u32);
-            }
-            c => out.push(c),
-        }
-    }
-    out
 }
 
 /// Run the doctor checks against `firmware_root`. Returns a [`Report`]
@@ -298,18 +283,31 @@ fn check_personas_dir(personas_dir: &Path) -> Check {
             ),
         };
     }
-    let count = std::fs::read_dir(personas_dir)
-        .map(|iter| {
-            iter.flatten()
-                .filter(|e| {
-                    e.path()
-                        .extension()
-                        .and_then(|s| s.to_str())
-                        .is_some_and(|s| s == "yaml")
-                })
-                .count()
+    // Surface read_dir errors as a Fail with the underlying message
+    // rather than silently treating them as "0 yaml files". An
+    // unreadable persona dir (permissions, disk error, FUSE drop) is
+    // a configuration problem the operator needs to know about — the
+    // previous `unwrap_or(0)` rendered it indistinguishable from
+    // "directory exists but empty" which is the wrong diagnostic.
+    let iter = match std::fs::read_dir(personas_dir) {
+        Ok(it) => it,
+        Err(e) => {
+            return Check {
+                verdict: Verdict::Fail,
+                subject: "personas/".into(),
+                message: format!("cannot read directory {}: {e}", personas_dir.display()),
+            };
+        }
+    };
+    let count = iter
+        .flatten()
+        .filter(|e| {
+            e.path()
+                .extension()
+                .and_then(|s| s.to_str())
+                .is_some_and(|s| s == "yaml")
         })
-        .unwrap_or(0);
+        .count();
     if count == 0 {
         return Check {
             verdict: Verdict::Fail,
