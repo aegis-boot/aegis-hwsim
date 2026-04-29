@@ -93,6 +93,37 @@ pub enum LoadError {
         /// The configured firmware root (`$AEGIS_HWSIM_ROOT/firmware/`).
         root: PathBuf,
     },
+
+    /// The configured firmware root could not be canonicalized — typically
+    /// because the directory doesn't exist or isn't readable. Symlink
+    /// guards rely on canonicalization, so we refuse to load rather than
+    /// fall back to a non-canonical root that could let traversal slip
+    /// through (aegis-boot#226 security constraint #2).
+    #[error("firmware root {root:?} is missing or not canonicalizable: {source}")]
+    FirmwareRootMissing {
+        /// The configured firmware root that failed to canonicalize.
+        root: PathBuf,
+        /// Underlying filesystem error from `canonicalize()`.
+        #[source]
+        source: std::io::Error,
+    },
+
+    /// A persona references a `custom_keyring` whose absolute resolved
+    /// path can't be canonicalized — usually because the file doesn't
+    /// exist. Same rationale as `FirmwareRootMissing`: without
+    /// canonicalization the symlink-traversal guard is unreliable.
+    #[error("{path:?}: custom_keyring {keyring:?} (resolved: {resolved:?}) cannot be canonicalized: {source}")]
+    CustomKeyringMissing {
+        /// Path of the persona YAML with the bad reference.
+        path: PathBuf,
+        /// The keyring path as written in the YAML (relative or absolute).
+        keyring: PathBuf,
+        /// The path after joining with `firmware_root` (for relative inputs).
+        resolved: PathBuf,
+        /// Underlying filesystem error from `canonicalize()`.
+        #[source]
+        source: std::io::Error,
+    },
 }
 
 /// Options for `load_all`. Split from args so callers can extend without
@@ -172,11 +203,20 @@ fn load_one(path: &Path, opts: &LoadOptions) -> Result<Persona, LoadError> {
         source,
     })?;
 
-    // Guard 1: filename stem must match persona.id.
-    let filename_stem = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or_default();
+    // Guard 1: filename stem must match persona.id. A non-UTF-8 stem
+    // (or no stem at all — `read_dir` shouldn't surface those, but be
+    // defensive) is itself a load failure. Falling back to "" would
+    // produce a misleading "expected '' got X" mismatch error.
+    let filename_stem =
+        path.file_stem()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| LoadError::Read {
+                path: path.to_path_buf(),
+                source: std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "persona path has no UTF-8 file stem",
+                ),
+            })?;
     if persona.id != filename_stem {
         return Err(LoadError::IdMismatch {
             path: path.to_path_buf(),
@@ -292,9 +332,16 @@ fn quirk_tag_is_valid(tag: &str) -> bool {
 /// both sides so symlinks don't punch through the guard. If either side
 /// can't be canonicalized (keyring doesn't exist yet, root missing), we
 /// reject — a nonexistent keyring reference is just as dangerous as a
-/// traversing one.
+/// traversing one (aegis-boot#226 security constraint #2). The previous
+/// `unwrap_or_else` fallbacks silently weakened this defense by letting
+/// non-canonical paths flow into the `starts_with` check.
 fn check_custom_keyring(path: &Path, keyring: &Path, root: &Path) -> Result<(), LoadError> {
-    let canon_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let canon_root = root
+        .canonicalize()
+        .map_err(|source| LoadError::FirmwareRootMissing {
+            root: root.to_path_buf(),
+            source,
+        })?;
     // Relative `custom_keyring` resolves against firmware_root — that's
     // the contract documented in firmware/test-keyring/README.md and in
     // docs/persona-authoring.md. Absolute paths stay as-is so the
@@ -304,7 +351,15 @@ fn check_custom_keyring(path: &Path, keyring: &Path, root: &Path) -> Result<(), 
     } else {
         canon_root.join(keyring)
     };
-    let canon_keyring = resolved.canonicalize().unwrap_or_else(|_| resolved.clone());
+    let canon_keyring =
+        resolved
+            .canonicalize()
+            .map_err(|source| LoadError::CustomKeyringMissing {
+                path: path.to_path_buf(),
+                keyring: keyring.to_path_buf(),
+                resolved: resolved.clone(),
+                source,
+            })?;
     if !canon_keyring.starts_with(&canon_root) {
         return Err(LoadError::CustomKeyringOutsideRoot {
             path: path.to_path_buf(),
@@ -525,6 +580,67 @@ tpm:
         write(&opts.personas_dir, "relpath.yaml", &body);
         let loaded = load_all(&opts).unwrap();
         assert_eq!(loaded.len(), 1);
+    }
+
+    /// Missing firmware root — the `canonicalize()` call inside
+    /// `check_custom_keyring` must surface a concrete `FirmwareRootMissing`
+    /// error rather than silently falling back to a non-canonical path.
+    /// This covers the symlink-defense regression that used to live at
+    /// `loader.rs:297` (the old `unwrap_or_else` fallback).
+    #[test]
+    fn firmware_root_missing_is_rejected_when_persona_uses_custom_keyring() {
+        let tmp = tempfile::tempdir().unwrap();
+        let personas = tmp.path().join("personas");
+        let firmware = tmp.path().join("firmware-does-not-exist");
+        fs::create_dir_all(&personas).unwrap();
+        // Note: deliberately do NOT create `firmware`.
+        let opts = LoadOptions {
+            personas_dir: personas,
+            firmware_root: firmware.clone(),
+        };
+        let mut body = minimal_yaml("rootless");
+        body = body.replace(
+            "secure_boot:\n  ovmf_variant: ms_enrolled\n",
+            "secure_boot:\n  ovmf_variant: custom_pk\n  custom_keyring: keyring.fd\n",
+        );
+        write(&opts.personas_dir, "rootless.yaml", &body);
+        let err = load_all(&opts).unwrap_err();
+        match err {
+            LoadError::FirmwareRootMissing { root, .. } => {
+                assert_eq!(root, firmware);
+            }
+            other => panic!("expected FirmwareRootMissing, got {other:?}"),
+        }
+    }
+
+    /// Missing keyring file — same regression family as the firmware-root
+    /// case. The previous `unwrap_or_else` at `loader.rs:307` would let a
+    /// non-existent absolute path pass through to the `starts_with`
+    /// check on a non-canonical string. Now we surface the missing file
+    /// as a concrete `CustomKeyringMissing` error.
+    #[test]
+    fn custom_keyring_missing_file_is_rejected() {
+        let (_tmp, opts) = tmp_opts();
+        // Reference a relative keyring that does NOT exist.
+        let mut body = minimal_yaml("missing");
+        body = body.replace(
+            "secure_boot:\n  ovmf_variant: ms_enrolled\n",
+            "secure_boot:\n  ovmf_variant: custom_pk\n  custom_keyring: nope.fd\n",
+        );
+        write(&opts.personas_dir, "missing.yaml", &body);
+        let err = load_all(&opts).unwrap_err();
+        match err {
+            LoadError::CustomKeyringMissing {
+                keyring, resolved, ..
+            } => {
+                assert_eq!(keyring, PathBuf::from("nope.fd"));
+                assert_eq!(
+                    resolved,
+                    opts.firmware_root.canonicalize().unwrap().join("nope.fd")
+                );
+            }
+            other => panic!("expected CustomKeyringMissing, got {other:?}"),
+        }
     }
 
     /// Relative `custom_keyring` with `..` traversal must still be rejected
