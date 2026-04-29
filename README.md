@@ -1,12 +1,16 @@
 # aegis-hwsim
 
 [![CI](https://github.com/williamzujkowski/aegis-hwsim/actions/workflows/ci.yml/badge.svg)](https://github.com/williamzujkowski/aegis-hwsim/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/williamzujkowski/aegis-hwsim/actions/workflows/codeql.yml/badge.svg)](https://github.com/williamzujkowski/aegis-hwsim/actions/workflows/codeql.yml)
 [![MSRV](https://img.shields.io/badge/MSRV-1.85-blue)](./Cargo.toml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](./LICENSE-MIT)
 
-<!-- crates.io + docs.rs badges pending first `cargo publish` (tracked: E7 #7) -->
+<!-- crates.io + docs.rs badges pending first `cargo publish` (tracked: E7 #7).
+     The release pipeline (`.github/workflows/crates-publish.yml`) is wired
+     and exercises a `cargo publish --dry-run`-equivalent on every CI run via
+     the `cargo-package-dry-run` step in ci.yml. -->
 
-**Status:** Phase 1 + Phase 2 complete (v0.0.2, 2026-04-18) — 11 personas covering all 4 OVMF variants and all 3 TPM versions, 2 scenarios (`qemu-boots-ovmf` smoke + `signed-boot-ubuntu` end-to-end), coverage-grid artifact per PR, 113 tests including 60k-input fuzz per CI run. Tracks [aegis-boot#226](https://github.com/williamzujkowski/aegis-boot/issues/226); next phases tracked in [#5](https://github.com/williamzujkowski/aegis-hwsim/issues/5) / [#6](https://github.com/williamzujkowski/aegis-hwsim/issues/6) / [#7](https://github.com/williamzujkowski/aegis-hwsim/issues/7).
+**Status:** Phase 2 + E5 (MOK + unsigned-kexec) structurally complete (v0.0.2, 2026-04-29) — 11 personas covering all 4 OVMF variants and all 3 TPM versions, 4 scenarios (`qemu-boots-ovmf` smoke + `signed-boot-ubuntu` end-to-end + `kexec-refuses-unsigned` + `mok-enroll-alpine`), coverage-grid artifact per PR, ~140 tests including 60k-input fuzz per CI run, CodeQL static analysis enabled. Tracks [aegis-boot#226](https://github.com/williamzujkowski/aegis-boot/issues/226); next phases tracked in [#5](https://github.com/williamzujkowski/aegis-hwsim/issues/5) / [#6](https://github.com/williamzujkowski/aegis-hwsim/issues/6) / [#7](https://github.com/williamzujkowski/aegis-hwsim/issues/7).
 
 A test harness that parameterizes **QEMU + OVMF + swtpm** over a matrix of **hardware personas** — YAML fixtures matching real shipping laptops/workstations — so [aegis-boot](https://github.com/williamzujkowski/aegis-boot)'s UEFI-Secure-Boot-preserving USB-rescue-stick flow can be validated across ~100 configurations without waiting on physical Framework / ThinkPad / Dell / HP / ASUS hardware.
 
@@ -97,6 +101,21 @@ target/release/aegis-hwsim coverage-grid               # Markdown
 target/release/aegis-hwsim coverage-grid --format json # schema_version=1 JSON
 target/release/aegis-hwsim coverage-grid --dry-run     # fast: every cell SKIP
 
+# Generate the PK/KEK/db test keyring for custom-PK scenarios (E5)
+# Every cert carries TEST_ONLY_NOT_FOR_PRODUCTION in its CN; the
+# release-gate audit refuses to publish anything containing it.
+target/release/aegis-hwsim gen-test-keyring \
+  --out firmware/test-keyring/generated \
+  --enroll-into firmware/test-keyring/generated/custom-pk.fd
+
+# Visually verify OVMF actually renders (operator tool, requires
+# python3 + pnmtopng or imagemagick for PPM→PNG)
+./scripts/visual-verify-boot.sh                # empty-stick smoke
+sudo ./scripts/visual-verify-boot.sh \         # real USB stick (read-only)
+  --usb /dev/disk/by-id/usb-...
+# Output: work/visual/<timestamp>/screen.{ppm,png}, serial.log, metadata.json
+# Reference run: docs/evidence/visual-verify-aegis-boot-stick-2026-04-29.png
+
 # End-to-end against a real signed aegis-boot stick
 # (build the stick on a Linux machine via aegis-boot's mkusb.sh first)
 target/release/aegis-hwsim run \
@@ -132,16 +151,20 @@ Every read-mostly subcommand accepts `--json` and emits a `schema_version=1` env
 | `hp-elitebook-845-g10` | 2.0 (fTPM) | ms_enrolled | Phase 2 |
 | `asus-zenbook-14-oled` | 2.0 (PTT) | ms_enrolled | Phase 2 |
 
-OVMF variant matrix coverage today: **4 of 4** — `ms_enrolled` (8 personas), `disabled` (1), `setup_mode` (1), `custom_pk` (1). The custom_pk persona uses a 1 MB pseudo-random placeholder keyring under `firmware/test-keyring/`; real test-key generation (with the harness-test marker baked into the cert CN) is future work.
+OVMF variant matrix coverage today: **4 of 4** — `ms_enrolled` (8 personas), `disabled` (1), `setup_mode` (1), `custom_pk` (1). The custom_pk persona references a 1 MB pseudo-random placeholder under `firmware/test-keyring/` for path-traversal-guard tests; real PK/KEK/db keyrings (with `TEST_ONLY_NOT_FOR_PRODUCTION` baked into each cert CN) are produced by `aegis-hwsim gen-test-keyring` (E5.1b/E5.1d) and live under `firmware/test-keyring/generated/` (gitignored).
 
 All vendor-docs source citations are flagged PLACEHOLDER pending a real community hardware-report. See `personas/*.yaml` for the per-persona quirks captured (boot-key F8/F9/F12, vendor-specific MOK Manager rendering, AMD fTPM stuttering errata, TPM 1.2 SHA-1-only PCR bank, etc.).
 
-### Scenarios (2 shipped today)
+### Scenarios (4 shipped today)
 
 | Name | Asserts | Needs | Runs on CI? |
 |------|---------|-------|---|
 | `qemu-boots-ovmf` | OVMF emits `BdsDxe` boot-selector marker | qemu + ovmf | Yes — runs against `qemu-smoke-no-tpm` every PR |
 | `signed-boot-ubuntu` | Full chain: shim → grub → kernel → kexec | qemu + ovmf + swtpm + signed `aegis-boot.img` | Skipped on CI (no signed stick artifact yet) |
+| `kexec-refuses-unsigned` | Under enforcing SB + lockdown, an unsigned `kexec_file_load` is rejected with `EKEYREJECTED` and rescue-tui surfaces its diagnostic | qemu + ovmf + swtpm + signed stick + aegis-boot rescue-tui [test-mode hook](https://github.com/aegis-boot/aegis-boot/issues/675) | Skipped pending the rescue-tui companion |
+| `mok-enroll-alpine` | Booting Alpine (unsigned) under MS-enrolled SB triggers the rescue-tui MOK walkthrough; STEP 1/3's literal `sudo mokutil --import` appears verbatim per [aegis-boot#202](https://github.com/aegis-boot/aegis-boot/pull/202) | qemu + ovmf + signed stick + Alpine ISO entry [companion](https://github.com/aegis-boot/aegis-boot/issues/676) | Skipped pending the stick-side companion |
+
+E5 (`kexec-refuses-unsigned` + `mok-enroll-alpine`) ships harness-side complete. Both currently `SKIP` against the existing aegis-boot stick — converting Skip → Pass requires the cross-repo companions tracked at [aegis-boot#675](https://github.com/aegis-boot/aegis-boot/issues/675) and [aegis-boot#676](https://github.com/aegis-boot/aegis-boot/issues/676). E6 (attestation) remains blocked on [aegis-boot#677](https://github.com/aegis-boot/aegis-boot/issues/677) (manifest contract).
 
 Adding a scenario? See [docs/scenario-authoring.md](docs/scenario-authoring.md). Adding a persona? See [docs/persona-authoring.md](docs/persona-authoring.md). Either way, start with [CONTRIBUTING.md](CONTRIBUTING.md).
 
