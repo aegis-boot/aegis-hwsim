@@ -4,13 +4,77 @@ All notable changes to aegis-hwsim. Mirrors the [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
-### CI
+## [0.1.0] — 2026-04-30
 
-- **Bump Node-20-based GitHub Actions to Node-24-compatible v5** (closes [#59](https://github.com/williamzujkowski/aegis-hwsim/issues/59)) — `actions/checkout@v4 → @v5` and `actions/upload-artifact@v4 → @v5` in `.github/workflows/ci.yml`. Closes the deprecation banner runners surface ("Node.js 20 actions are deprecated… Node.js 20 will be removed from the runner on September 16th, 2026"). Single-line changes; v5 is backward-compatible with the explicit `retention-days: 30` and `if-no-files-found: error` settings we use.
+First crates.io publish. Closes E5 (MOK + unsigned-kexec) and E6 (attestation roundtrip) structurally; partially closes E7 (v1.0 release gate — the trusted-publishing pipeline now publishes a real release). Five scenarios shipped, ~150 tests, CodeQL clean, full release-readiness gate (audit + `cargo publish --dry-run`) on every CI run.
+
+### Why 0.1.0 and not 1.0.0
+
+E7 ([#7](https://github.com/williamzujkowski/aegis-hwsim/issues/7)) calls for a real-hardware comparison study (`docs/research/hw-vs-sim-delta-2026.md`) running aegis-hwsim against three physical laptops and recording deltas. That study is gated on hardware availability we don't have today — it's an empirical claim, not a code milestone. Tagging 1.0.0 before that data exists would overclaim per the project's "verified outcomes only" ethos. 0.1.0 ships the harness, exercises the trusted-publishing pipeline end-to-end, and preserves the v1.0 milestone for when the study lands.
+
+### Added — E5 (MOK + unsigned-kexec)
+
+- **`scenarios/kexec_refuses_unsigned.rs`** ([#78](https://github.com/williamzujkowski/aegis-hwsim/pull/78), [#82](https://github.com/williamzujkowski/aegis-hwsim/pull/82)) — boots the persona under enforcing SB + lockdown, requires `aegis.test=kexec-unsigned` on the kernel cmdline (baked via aegis-boot's `MKUSB_TEST_MODE` flag), grep-pins `aegis-boot-test: kexec-unsigned starting` + `… REJECTED` from aegis-boot's published [`docs/rescue-tui-serial-format.md`](https://github.com/aegis-boot/aegis-boot/blob/main/docs/rescue-tui-serial-format.md) contract.
+- **`scenarios/mok_enroll_alpine.rs`** ([#79](https://github.com/williamzujkowski/aegis-hwsim/pull/79), [#82](https://github.com/williamzujkowski/aegis-hwsim/pull/82)) — boots under MS-enrolled SB with `aegis.test=mok-enroll` cmdline; asserts the rescue-tui MOK walkthrough renders STEP 1/3 + the literal `sudo mokutil --import` payload verbatim per [aegis-boot#202](https://github.com/aegis-boot/aegis-boot/pull/202).
+- **`aegis-hwsim gen-test-keyring`** ([#72](https://github.com/williamzujkowski/aegis-hwsim/pull/72), [#75](https://github.com/williamzujkowski/aegis-hwsim/pull/75)) — orchestrates `openssl` + `cert-to-efi-sig-list` + `sign-efi-sig-list` + `virt-fw-vars` to mint a PK/KEK/db keyring (every cert CN carries `TEST_ONLY_NOT_FOR_PRODUCTION`) and enroll it into a working `OVMF_VARS` file. Optional `--enroll-into <FILE>` flag does the full pipeline in one shot.
+- **`scripts/audit-no-test-keys.sh`** ([#71](https://github.com/williamzujkowski/aegis-hwsim/pull/71)) — release-time audit that scans the cargo package list for the `TEST_ONLY_NOT_FOR_PRODUCTION` token in suspicious-extension files (`.fd .pem .key .crt .der .cer .efi .esl .auth`, anything under `firmware/`). Wired into `crates-publish.yml` BEFORE the OIDC token mint and into `ci.yml` on every PR. Source/doc/fixture references are allowlisted (the token IS the policy enforcement constant).
+- **Loader guard**: reject `custom_keyring` on non-`custom_pk` variants ([#74](https://github.com/williamzujkowski/aegis-hwsim/pull/74)). Closes the footgun documented in `docs/research/gotchas.md#6` — operator thinks they're testing key enrollment but is observing a no-op against pre-enrolled keys.
+- **`doctor` probes**: `openssl` / `sbsign` / `cert-to-efi-sig-list` / `virt-fw-vars` ([#70](https://github.com/williamzujkowski/aegis-hwsim/pull/70), [#75](https://github.com/williamzujkowski/aegis-hwsim/pull/75)) at Warn severity.
+
+### Added — E6 (attestation roundtrip)
+
+- **`scenarios/attestation_roundtrip.rs`** ([#83](https://github.com/williamzujkowski/aegis-hwsim/pull/83)) — boots TPM-bearing personas with `aegis.test=manifest-roundtrip` cmdline; rescue-tui mounts the ESP, parses the manifest via `aegis-wire-formats::Manifest`, and (when populated) compares each `expected_pcrs[]` entry to the live PCR. Currently fail-opens on the documented empty PCR list per the [`docs/attestation-manifest.md`](https://github.com/aegis-boot/aegis-boot/blob/main/docs/attestation-manifest.md) contract; auto-tightens to "Pass only on PCR MATCH" when aegis-boot starts populating the field.
+- Cross-repo: aegis-boot pinned the manifest contract (`schema_version=1`, `expected_pcrs: Vec<PcrEntry>`) in [aegis-boot PR #682](https://github.com/aegis-boot/aegis-boot/pull/682) per our coordination request.
+
+### Added — release infrastructure
+
+- **`crates-publish.yml`** ([#66](https://github.com/williamzujkowski/aegis-hwsim/pull/66)) — Trusted Publishing via `rust-lang/crates-io-auth-action`. NO long-lived `CARGO_REGISTRY_TOKEN`; OIDC exchange mints a short-lived (~30 min) crates.io token. Per-step + per-job timeouts. `release` environment gate scoped to `v*` tag pushes.
+- **`scripts/publish-if-new.sh`** — idempotent wrapper. Compares workspace version against crates.io's `max_version` and exits 0 cleanly if already published — prevents a re-tag from turning into a 400 cascade.
+- **`cargo publish --dry-run` on every PR** ([#80](https://github.com/williamzujkowski/aegis-hwsim/pull/80)) — packages the crate exactly as it would ship and runs a full compile of the resulting tarball. Catches `Cargo.toml` metadata drift months before tag-push time.
+- **CI hardening** ([#68](https://github.com/williamzujkowski/aegis-hwsim/pull/68)) — workflow-level `concurrency` block with `cancel-in-progress`; `timeout-minutes: 30` on the test job; `if: always()` cleanup step that pkills stray `swtpm` / `qemu-system-x86_64` and `rm -rf`s `/tmp/aegis-hwsim-*`.
+- **CodeQL static analysis** ([#77](https://github.com/williamzujkowski/aegis-hwsim/pull/77)) — `security-extended` query suite on push/PR/weekly schedule. First analyses ran clean.
+- **GitHub Actions SHA-pinned** ([#84](https://github.com/williamzujkowski/aegis-hwsim/pull/84)) — every `uses:` reference now points at a 40-char commit SHA with a `# v<TAG>` comment for grep-ability. Closes the floating-tag supply-chain risk with an OIDC-secrets workflow live.
+
+### Added — observability + ergonomics
+
+- **`scripts/visual-verify-boot.sh`** ([#73](https://github.com/williamzujkowski/aegis-hwsim/pull/73)) — operator-tooling that boots OVMF headless and captures a real framebuffer screenshot via QEMU's QMP `screendump`. Reference run committed at `docs/evidence/visual-verify-aegis-boot-stick-2026-04-29.png` shows GNU GRUB 2.12 with three `aegis-boot rescue` menu entries — proves the harness's QEMU+OVMF wiring boots a real signed-rescue stick end-to-end.
+- **`crate::json::escape`** ([#81](https://github.com/williamzujkowski/aegis-hwsim/pull/81)) — extracted shared JSON-string-escaper. Three previous duplicate copies (in `bin/aegis-hwsim`, `coverage_grid`, `doctor`) now delegate.
+- **`coverage_grid::render_markdown`** ([#81](https://github.com/williamzujkowski/aegis-hwsim/pull/81)) — `O(N²·M²) → O(N·M)` via `HashMap` lookup. Harmless on 11 personas × 5 scenarios but cubic-ish as the grid grows.
+- **CLI**: `flag_value` / `flag_path_or` argv helpers ([#69](https://github.com/williamzujkowski/aegis-hwsim/pull/69)) — extracted from 3 duplicated `--flag VALUE` lookups; `--format` now exact-matches `{json, markdown}` instead of substring-matching.
+- **`doctor`**: `read_dir` errors now surface in the FAIL message instead of silently mapping to "0 files" ([#81](https://github.com/williamzujkowski/aegis-hwsim/pull/81)).
+- **I/O errors** in `qemu`/`swtpm`/`ovmf`: `e.to_string()` (e.g. "No such file or directory (os error 2)") instead of `format!("{:?}", e.kind())` (e.g. "NotFound") ([#81](https://github.com/williamzujkowski/aegis-hwsim/pull/81)).
+
+### Fixed — security regressions
+
+- **`loader.rs:179, 297, 307`** ([#67](https://github.com/williamzujkowski/aegis-hwsim/pull/67)) — three `unwrap_or_default` / `unwrap_or_else` fallbacks were silently masking errors that should surface as concrete `LoadError` variants. The L297 fallback weakened the path-traversal defense by accepting a non-canonical firmware root. New `FirmwareRootMissing` and `CustomKeyringMissing` variants surface canonicalization failures.
 
 ### Documentation
 
-- **Research index gains a structured registry layer** — new `docs/research/INDEX.md` (frontmatter-bearing canonical entry point) plus `docs/research/registry/{sources,papers,projects}.yaml` for machine-readable enumeration of adjacent tools (14), academic papers (5), and 2025/2026 delta-scan projects (5). New `docs/research/registry/SCHEMA.json` (JSON Schema 2020-12) defines the contract — three `oneOf` variants for the three YAML types, with required `tie_in` (papers) and `notes` (sources, projects) so every entry justifies its inclusion. CI gains a `check-jsonschema`-based validation step. Mirrors the [nexus-agents](https://github.com/williamzujkowski/nexus-agents) pattern: human-readable narrative in `*.md`, machine-readable registry in `*.yaml`. The legacy `README.md` is preserved for back-compat with existing inbound links and now redirects to `INDEX.md` as the canonical entry.
+- **README**: post-E5+E6 accuracy sweep ([#80](https://github.com/williamzujkowski/aegis-hwsim/pull/80), [#83](https://github.com/williamzujkowski/aegis-hwsim/pull/83)) — status line, scenario table (5 entries), `MKUSB_TEST_MODE=<name>` operator walkthrough, persona-library blurb pointing at the generator instead of placeholder-only narrative.
+- **`docs/visual-verification.md`** ([#73](https://github.com/williamzujkowski/aegis-hwsim/pull/73), [#76](https://github.com/williamzujkowski/aegis-hwsim/pull/76)) — operator recipe for `visual-verify-boot.sh` empty-stick smoke + real-USB-stick + `--vars-template` custom-PK modes.
+- **`docs/evidence/`** — committed reference runs for the empty-stick smoke and the real aegis-boot signed-rescue-stick boot.
+- **Research index**: structured registry layer ([#58](https://github.com/williamzujkowski/aegis-hwsim/pull/58)).
+- **CI** — bumped Node-20-based actions to v5 ([#60](https://github.com/williamzujkowski/aegis-hwsim/pull/60)).
+
+### Cross-repo coordination
+
+This release closes 5 cross-repo coordination tickets on aegis-boot — all driven from the harness side once the harness work was structurally complete:
+
+| aegis-boot # | Closes | What we needed | aegis-boot's response |
+|---|---|---|---|
+| [#675](https://github.com/aegis-boot/aegis-boot/issues/675) | E5.3 | rescue-tui kexec-unsigned test mode + serial-format docs | PR #680 — shipped + serial-format contract pinned |
+| [#676](https://github.com/aegis-boot/aegis-boot/issues/676) | E5.4 | rescue-tui mok-enroll test mode | PR #681 — shipped |
+| [#677](https://github.com/aegis-boot/aegis-boot/issues/677) | E6 | attestation manifest contract pin | PR #682 — `docs/attestation-manifest.md` published |
+| [#694](https://github.com/aegis-boot/aegis-boot/issues/694) | E5+E6 operator UX | `MKUSB_TEST_MODE=<NAME>` env var on `mkusb`/`flash` | PR #696 — shipped |
+| [#695](https://github.com/aegis-boot/aegis-boot/issues/695) | E6 | rescue-tui manifest-roundtrip test mode | PR #697 — shipped |
+
+### Deferred to v0.2.0+
+
+- **End-to-end test-mode visual evidence** — running aegis-boot's `mkusb` against a loopback `.img` requires aegis-boot's full build chain (signed shim + grub + kernel + initramfs). Not currently in aegis-hwsim's scope. Tracked as a v0.2.0 follow-up.
+- **Real-hardware comparison study** ([#7](https://github.com/williamzujkowski/aegis-hwsim/issues/7)) — `docs/research/hw-vs-sim-delta-2026.md` requires running the harness + physical hardware on the same persona for ≥3 different laptops. Gated on hardware availability.
+- **`signed-boot-uki` scenario** ([#50](https://github.com/williamzujkowski/aegis-hwsim/issues/50)) — blocked on a UKI-formatted aegis-boot stick artifact existing.
+- **`sbat_generation` persona axis** ([#51](https://github.com/williamzujkowski/aegis-hwsim/issues/51)) — blocked on first real-world hardware report flagging SBAT failure.
+- **`tests/fuzz_invocation.rs` parameterization** — six near-identical property tests; readable as-is, parameterizing them is pure polish.
 
 ## [0.0.2] — 2026-04-18
 
